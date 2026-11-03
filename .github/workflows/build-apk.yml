@@ -1,0 +1,92 @@
+
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Prepare application files
+        shell: bash
+        run: |
+          mkdir -p extracted www
+
+          APP_DIR=$(find . -path './.git' -prune -o \
+            -path './extracted' -prune -o \
+            -type f -name index.html -print | head -n 1)
+
+          if [ -z "$APP_DIR" ]; then
+            ZIP_FILE=$(find . -path './.git' -prune -o \
+              -type f -iname '*.zip' -print | head -n 1)
+
+            if [ -z "$ZIP_FILE" ]; then
+              echo "No ZIP file or index.html found."
+              exit 1
+            fi
+
+            unzip -q "$ZIP_FILE" -d extracted
+
+            APP_DIR=$(find extracted -type f -name index.html \
+              -print | head -n 1)
+          fi
+
+          if [ -z "$APP_DIR" ]; then
+            echo "index.html not found."
+            exit 1
+          fi
+
+          cp -a "$(dirname "$APP_DIR")/." www/
+
+      - name: Install Capacitor
+        run: |
+          npm init -y
+          npm install @capacitor/core @capacitor/android @capacitor/cli
+
+      - name: Configure Android application
+        run: |
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.hitman.physicstracker",
+            "appName": "Physics Student Manager",
+            "webDir": "www"
+          }
+          EOF
+
+      - name: Create Android project
+        run: npx cap add android
+
+      - name: Sync application
+        run: npx cap sync android
+
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Physics-Student-Manager-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          
